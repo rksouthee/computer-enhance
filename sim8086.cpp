@@ -1,3 +1,4 @@
+#include <bitset>
 #include <format>
 #include <iostream>
 #include <vector>
@@ -6,6 +7,9 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdint>
+
+using s8 = std::int8_t;
+using s16 = std::int16_t;
 
 using u8 = std::uint8_t;
 using u16 = std::uint16_t;
@@ -104,7 +108,7 @@ const u8* decode(const u8* data, const u8* end)
 				u16 displacement = 0;
 				assert((end - data) >= 2);
 				data = load_little_endian(data, displacement);
-				r_m_str = std::format("[{}]", displacement);
+				r_m_str = std::format("[{}]", static_cast<s16>(displacement));
 			}
 			else
 			{
@@ -119,9 +123,14 @@ const u8* decode(const u8* data, const u8* end)
 			data = load_little_endian(data, displacement);
 			const char* const reg_str = s_reg[w][reg];
 			std::string r_m_str;
-			if (displacement)
+			auto d16 = static_cast<s16>(static_cast<s8>(displacement));
+			if (d16 > 0)
 			{
-				r_m_str = std::format("[{} + {}]", effective_address[r_m], static_cast<unsigned>(displacement));
+				r_m_str = std::format("[{} + {}]", effective_address[r_m], d16);
+			}
+			else if (d16 < 0)
+			{
+				r_m_str = std::format("[{} - {}]", effective_address[r_m], -d16);
 			}
 			else
 			{
@@ -134,7 +143,20 @@ const u8* decode(const u8* data, const u8* end)
 			u16 displacement = 0;
 			data = load_little_endian(data, displacement);
 			const char* const reg_str = s_reg[w][reg];
-			const std::string r_m_str = std::format("[{} + {}]", effective_address[r_m], displacement);
+			auto d16 = static_cast<s16>(displacement);
+			std::string r_m_str;
+			if (d16 > 0)
+			{
+				r_m_str = std::format("[{} + {}]", effective_address[r_m], d16);
+			}
+			else if (d16 < 0)
+			{
+				r_m_str = std::format("[{} - {}]", effective_address[r_m], -d16);
+			}
+			else
+			{
+				r_m_str = std::format("[{}]", effective_address[r_m]);
+			}
 			output_operands(reg_str, r_m_str);
 		}
 		else if (mod == 0b11)
@@ -162,8 +184,67 @@ const u8* decode(const u8* data, const u8* end)
 		}
 		std::cout << std::endl;
 	}
+	else if ((byte >> 1) == 0b1100011)
+	{
+		const u8 w = (byte >> 0) & 0x1;
+		byte = *data++;
+		const u8 mod = (byte >> 6) & 0x3;
+		const u8 r_m = (byte >> 0) & 0x7;
+		std::string r_m_str;
+		if (mod == 0b00)
+		{
+			r_m_str = std::format("[{}]", effective_address[r_m]);
+		}
+		else if (mod == 0b01)
+		{
+			u8 displacement = 0;
+			data = load_little_endian(data, displacement);
+			r_m_str = std::format("[{} + {}]", effective_address[r_m], displacement);
+		}
+		else if (mod == 0b10)
+		{
+			u16 displacement = 0;
+			data = load_little_endian(data, displacement);
+			r_m_str = std::format("[{} + {}]", effective_address[r_m], displacement);
+		}
+		else if (mod == 0b11)
+		{
+			r_m_str = s_reg[w][r_m];
+		}
+
+		std::string value_str;
+		if (w == 1)
+		{
+			u16 value = 0;
+			data = load_little_endian(data, value);
+			value_str = "word " + std::to_string(value);
+		}
+		else
+		{
+			u8 value = 0;
+			data = load_little_endian(data, value);
+			value_str = "byte " + std::to_string(value);
+		}
+
+		std::cout << "mov " << r_m_str << ", " << value_str << std::endl;
+	}
+	else if ((byte >> 1) == 0b1010000)
+	{
+		const u8 w = (byte >> 1) & 0x1;
+		u16 address = 0;
+		data = load_little_endian(data, address);
+		std::cout << "mov ax, [" << address << ']' << std::endl;
+	}
+	else if ((byte >> 1) == 0b1010001)
+	{
+		const u8 w = (byte >> 1) & 0x1;
+		u16 address = 0;
+		data = load_little_endian(data, address);
+		std::cout << "mov [" << address << "], ax" << std::endl;
+	}
 	else
 	{
+		std::cout << std::bitset<8>(byte) << std::endl;
 		assert(!"Shouldn't be here!");
 	}
 	return data;
